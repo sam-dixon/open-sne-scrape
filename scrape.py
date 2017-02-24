@@ -8,6 +8,7 @@ import pickle
 from astropy.time import Time
 from astropy import units as u
 from IPython import embed
+from tqdm import tqdm
 
 
 def ymd_to_mjd(date):
@@ -25,7 +26,11 @@ def sn_metadata(datadict):
     meta = {}
     sn_name = datadict.keys()[0]
     meta['name'] = sn_name
-    meta['t_max'] = ymd_to_mjd(datadict[sn_name]['maxvisualdate'][0]['value'])
+    try:
+        meta['t_max'] = ymd_to_mjd(datadict[sn_name]['maxvisualdate'][0]['value'])
+    except KeyError:
+        print(sn_name+' has no phase information')
+        return None
     meta['sources'] = datadict[sn_name]['sources']
     meta['redshift'] = datadict[sn_name]['redshift'][0]['value']
     return meta
@@ -38,7 +43,12 @@ def spectra_metadata(datadict, datadir='./data'):
     """
     sn_name = datadict.keys()[0]
     speclist = datadict[sn_name]['spectra']
-    t_max = ymd_to_mjd(datadict[sn_name]['maxvisualdate'][0]['value'])
+    try:
+        t_max = ymd_to_mjd(datadict[sn_name]['maxvisualdate'][0]['value'])
+    except KeyError:
+        print(sn_name+' has no phase information')
+        return None
+    all_spec_meta = []
     for spec in speclist:
         time, t_unit = float(spec['time']), spec['u_time'].lower()
         date = Time(time, format=t_unit).mjd
@@ -56,7 +66,8 @@ def spectra_metadata(datadict, datadir='./data'):
         spec_meta['phase'] = phase
         spec_meta['source'] = spec['source']
         spec_meta['path'] = path
-    return spec_meta
+        all_spec_meta.append(spec_meta)
+    return all_spec_meta
 
 
 if __name__ == '__main__':
@@ -64,11 +75,12 @@ if __name__ == '__main__':
     prefix = 'https://sne.space/astrocats/astrocats/supernovae/output/json/'
     urls = [prefix + name.replace(' ', '%20')+'.json' for name in names]
     metadata = {}
-    for url in urls[:20]:
-        print('Parsing '+url.split('/')[-1])
+    for url in tqdm(urls):
         r = requests.get(url)
         data = json.loads(r.content)
         sn_meta = sn_metadata(data)
+        if sn_meta is None:
+            continue
         sn_meta['spectra'] = spectra_metadata(data)
         metadata[data.keys()[0]] = sn_meta
     pickle.dump(metadata, open('META.pkl', 'wb'))
